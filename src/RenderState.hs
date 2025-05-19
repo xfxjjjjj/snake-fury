@@ -6,7 +6,7 @@
 {-|
 This module defines the board. A board is an array of CellType elements indexed by a tuple of ints: the height and width.
 
-for example, The following array represents a 3 by 4 board (left top corner is (1,1); right bottom corner is (3,4)) with a snake at 
+for example, The following array represents a 3 by 4 board (left top corner is (1,1); right bottom corner is (3,4)) with a snake at
 (2, 2) and (2, 3) and an apple at (3,4)
 
 < ((1,1) : Empty), ((1,2) : Empty), ((1,3) : Empty),     ((1,2) : Empty)
@@ -24,7 +24,7 @@ Which would look like this:
 module RenderState where
 
 -- This are all imports you need. Feel free to import more things.
-import Data.Array ( (//), listArray, Array, elems )
+import Data.Array ( (//), listArray, Array, assocs )
 import Data.Foldable ( foldl' )
 
 -- A point is just a tuple of integers.
@@ -51,33 +51,43 @@ data RenderState   = RenderState {board :: Board, gameOver :: Bool} deriving Sho
 
 -- | Given The board info, this function should return a board with all Empty cells
 emptyGrid :: BoardInfo -> Board
-emptyGrid = undefined
+emptyGrid b = let h = height b
+                  w = width b
+              in listArray ((1,1), (h,w)) (repeat Empty)
 
-{- 
-This is a test for emptyGrid. It should return 
+{-
+This is a test for emptyGrid. It should return
 array ((1,1),(2,2)) [((1,1),Empty),((1,2),Empty),((2,1),Empty),((2,2),Empty)]
 -}
 -- >>> emptyGrid (BoardInfo 2 2)
+-- array ((1,1),(2,2)) [((1,1),Empty),((1,2),Empty),((2,1),Empty),((2,2),Empty)]
 
 
 -- | Given BoardInfo, initial point of snake and initial point of apple, builds a board
-buildInitialBoard 
+buildInitialBoard
   :: BoardInfo -- ^ Board size
   -> Point     -- ^ initial point of the snake
   -> Point     -- ^ initial Point of the apple
   -> RenderState
-buildInitialBoard = undefined
+buildInitialBoard i snake apple =
+  let bd = emptyGrid i // [(snake, Snake), (apple, Apple)]
+  in RenderState {board = bd, gameOver = False}
 
-{- 
-This is a test for buildInitialBoard. It should return 
+{-
+This is a test for buildInitialBoard. It should return
 RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = False}
 -}
 -- >>> buildInitialBoard (BoardInfo 2 2) (1,1) (2,2)
+-- RenderState {board = array ((1,1),(2,2)) [((1,1),Snake),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = False}
 
 
 -- | Given tye current render state, and a message -> update the render state
 updateRenderState :: RenderState -> RenderMessage -> RenderState
-updateRenderState = undefined
+updateRenderState (RenderState st _) GameOver =
+  RenderState {board = st, gameOver = True}
+updateRenderState (RenderState bd gg) (RenderBoard delta) =
+  let bd' = bd // delta
+  in RenderState {board = bd', gameOver = gg}
 
 {-
 This is a test for updateRenderState
@@ -93,10 +103,12 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 -- >>> message2 = GameOver
 -- >>> updateRenderState initial_board message1
 -- >>> updateRenderState initial_board message2
+-- RenderState {board = array ((1,1),(2,2)) [((1,1),Empty),((1,2),SnakeHead),((2,1),Apple),((2,2),Apple)], gameOver = False}
+-- RenderState {board = array ((1,1),(2,2)) [((1,1),Snake),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = True}
 
 
 -- | Provisional Pretty printer
---   For each cell type choose a string to representing. 
+--   For each cell type choose a string to representing.
 --   a good option is
 --     Empty -> "- "
 --     Snake -> "0 "
@@ -104,13 +116,21 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 --     Apple -> "X "
 --   In other to avoid shrinking, I'd recommend to use some charachter followed by an space.
 ppCell :: CellType -> String
-ppCell = undefined
+ppCell Empty     = "- "
+ppCell Snake     = "0 "
+ppCell SnakeHead = "$ "
+ppCell Apple     = "X "
 
 
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
 render :: BoardInfo -> RenderState -> String
-render = undefined
+render _ (RenderState _ True) = ""
+render (BoardInfo _ w) (RenderState bd _) = foldl' renderWith "" (reverse (assocs bd))
+  where renderWith :: String -> (Point, CellType) -> String
+        renderWith s ((_,w'), cell)
+          | w' == w = ppCell cell ++ ('\n':s)
+          | otherwise = ppCell cell ++ s
 
 {-
 This is a test for render. It should return:
