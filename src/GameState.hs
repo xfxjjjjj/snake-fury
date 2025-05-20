@@ -153,8 +153,8 @@ move i s@(GameState (SnakeSeq he ts) apple _ _)
     _ ->
       case ts of
         S.Empty ->
-          let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake)]
-              snakeSe = SnakeSeq {snakeHead = h', snakeBody = ts}
+          let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Empty)]
+              snakeSe = SnakeSeq {snakeHead = h', snakeBody = S.Empty}
               state = s {snakeSeq = snakeSe}
           in (delta, state)
         x :<| S.Empty ->
@@ -167,7 +167,6 @@ move i s@(GameState (SnakeSeq he ts) apple _ _)
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = he :<| x :<| xs}
               state = s {snakeSeq = snakeSe}
           in (delta, state)
-
   where
     h' = nextHead i s
     (a', g') = newApple i s
