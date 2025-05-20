@@ -47,7 +47,10 @@ type DeltaBoard = [(Point, CellType)]
 data RenderMessage = RenderBoard DeltaBoard | GameOver deriving Show
 
 -- | The RenderState contains the board and if the game is over or not.
-data RenderState   = RenderState {board :: Board, gameOver :: Bool} deriving Show
+data RenderState   = RenderState {
+  board :: Board,
+  gameOver :: Bool,
+  score :: Int} deriving Show
 
 -- | Given The board info, this function should return a board with all Empty cells
 emptyGrid :: BoardInfo -> Board
@@ -71,7 +74,7 @@ buildInitialBoard
   -> RenderState
 buildInitialBoard i snake apple =
   let bd = emptyGrid i // [(snake, Snake), (apple, Apple)]
-  in RenderState {board = bd, gameOver = False}
+  in RenderState {board = bd, gameOver = False, score = 0}
 
 {-
 This is a test for buildInitialBoard. It should return
@@ -83,11 +86,14 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 
 -- | Given tye current render state, and a message -> update the render state
 updateRenderState :: RenderState -> RenderMessage -> RenderState
-updateRenderState (RenderState st _) GameOver =
-  RenderState {board = st, gameOver = True}
-updateRenderState (RenderState bd gg) (RenderBoard delta) =
-  let bd' = bd // delta
-  in RenderState {board = bd', gameOver = gg}
+updateRenderState st GameOver =
+  st {gameOver = True}
+updateRenderState st@(RenderState bd _ sc) (RenderBoard delta)
+  | Apple `elem` ss = st {board = bd', score = succ sc}
+  | otherwise       = st {board = bd'}
+  where
+    ss  = map snd delta
+    bd' = bd // delta
 
 {-
 This is a test for updateRenderState
@@ -125,8 +131,9 @@ ppCell Apple     = "X "
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
 render :: BoardInfo -> RenderState -> String
-render _ (RenderState _ True) = ""
-render (BoardInfo _ w) (RenderState bd _) = foldl' renderWith "" (reverse (assocs bd))
+render _ (RenderState _ True sc) = "final score: " ++ show sc ++ "\n"
+render (BoardInfo _ w) (RenderState bd _ sc) =
+  foldl' renderWith "" (reverse (assocs bd)) ++ "current score: " ++ show sc ++ "\n"
   where renderWith :: String -> (Point, CellType) -> String
         renderWith s ((_,w'), cell)
           | w' == w = ppCell cell ++ ('\n':s)
