@@ -14,7 +14,8 @@ import EventQueue (
  )
 import GameState (GameState (movement), move, opositeMovement)
 import Initialization (gameInitialization)
-import RenderState (BoardInfo, RenderState (gameOver), render, updateRenderState)
+import RenderState (BoardInfo, RenderState (gameOver, score), render, updateRenderStates)
+import EventQueue (setSpeed, calculateSpeed, EventQueue (currentSpeed))
 import System.Environment (getArgs)
 import System.IO (BufferMode (NoBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
 import Control.Monad (unless)
@@ -27,16 +28,17 @@ import Control.Monad (unless)
 --   - Render into the console
 gameloop :: BoardInfo -> GameState -> RenderState -> EventQueue -> IO ()
 gameloop binf gstate rstate queue = do
-  threadDelay $ initialSpeed queue
+  newSpeed <- setSpeed (score rstate) queue
+  threadDelay newSpeed
   event <- readEvent queue
-  let (delta, gstate') =
+  let (deltas, gstate') =
         case event of
           Tick -> move binf gstate
           UserEvent m ->
             if movement gstate == opositeMovement m
               then move binf gstate
               else move binf $ gstate{movement = m}
-  let rstate' = updateRenderState rstate delta
+  let rstate' = updateRenderStates rstate deltas
       isGameOver = gameOver rstate'
   putStr "\ESC[2J" --This cleans the console screen
   putStr $ render binf rstate'

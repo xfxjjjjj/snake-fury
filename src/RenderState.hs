@@ -44,7 +44,7 @@ type DeltaBoard = [(Point, CellType)]
 -- | The render message represent all message the GameState can send to the RenderState
 --   Right now Possible messages are a RenderBoard with a payload indicating which cells change
 --   or a GameOver message.
-data RenderMessage = RenderBoard DeltaBoard | GameOver deriving Show
+data RenderMessage = RenderBoard DeltaBoard | GameOver | Score deriving Show
 
 -- | The RenderState contains the board and if the game is over or not.
 data RenderState   = RenderState {
@@ -83,17 +83,15 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 -- >>> buildInitialBoard (BoardInfo 2 2) (1,1) (2,2)
 -- RenderState {board = array ((1,1),(2,2)) [((1,1),Snake),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = False}
 
+updateRenderStates :: RenderState -> [RenderMessage] -> RenderState
+updateRenderStates = foldl updateRenderState
 
 -- | Given tye current render state, and a message -> update the render state
 updateRenderState :: RenderState -> RenderMessage -> RenderState
-updateRenderState st GameOver =
-  st {gameOver = True}
-updateRenderState st@(RenderState bd _ sc) (RenderBoard delta)
-  | Apple `elem` ss = st {board = bd', score = succ sc}
-  | otherwise       = st {board = bd'}
-  where
-    ss  = map snd delta
-    bd' = bd // delta
+updateRenderState st GameOver = st {gameOver = True}
+updateRenderState st@(RenderState bd _ _) (RenderBoard delta)
+  = st {board = bd // delta}
+updateRenderState st Score = st {score = succ (score st)}
 
 {-
 This is a test for updateRenderState

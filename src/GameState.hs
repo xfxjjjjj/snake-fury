@@ -141,32 +141,33 @@ newApple (BoardInfo h w) (GameState (SnakeSeq he ts) apple _ g) =
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 --
 
-move :: BoardInfo -> GameState -> (Board.RenderMessage , GameState)
+move :: BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
 move i s@(GameState (SnakeSeq he ts) apple _ _)
-  | h' `elem` ts = (Board.GameOver, s)
+  | h' `elem` ts = ([Board.GameOver], s)
   | otherwise = case compare h' apple of
     EQ ->
-      let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (a', Board.Apple)]
+      let boardD = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (a', Board.Apple)]
+          scoreD = Board.Score
           snakeSe = SnakeSeq {snakeHead = h', snakeBody = he :<| ts}
           state = s {snakeSeq = snakeSe, applePosition = a', randomGen = g'}
-      in (delta, state)
+      in ([boardD, scoreD], state)
     _ ->
       case ts of
         S.Empty ->
           let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = S.Empty}
               state = s {snakeSeq = snakeSe}
-          in (delta, state)
+          in ([delta], state)
         x :<| S.Empty ->
           let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (x, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = S.singleton he}
               state = s {snakeSeq = snakeSe}
-          in (delta, state)
+          in ([delta], state)
         x :<| (xs :|> t) ->
           let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (t, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = he :<| x :<| xs}
               state = s {snakeSeq = snakeSe}
-          in (delta, state)
+          in ([delta], state)
   where
     h' = nextHead i s
     (a', g') = newApple i s
