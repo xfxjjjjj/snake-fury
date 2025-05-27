@@ -17,8 +17,9 @@ import Initialization (gameInitialization)
 import RenderState (BoardInfo, RenderState (gameOver, score), render, updateRenderStates)
 import EventQueue (setSpeed, calculateSpeed, EventQueue (currentSpeed))
 import System.Environment (getArgs)
-import System.IO (BufferMode (NoBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
+import System.IO (BufferMode (NoBuffering, BlockBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
 import Control.Monad (unless)
+import Data.ByteString.Builder (hPutBuilder)
 
 -- The game loop is easy:
 --   - wait some time
@@ -41,7 +42,7 @@ gameloop binf gstate rstate queue = do
   let rstate' = updateRenderStates rstate deltas
       isGameOver = gameOver rstate'
   putStr "\ESC[2J" --This cleans the console screen
-  putStr $ render binf rstate'
+  hPutBuilder stdout (render binf rstate')
   unless isGameOver $ gameloop binf gstate' rstate' queue
 
 -- | main.

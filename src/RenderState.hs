@@ -26,6 +26,7 @@ module RenderState where
 -- This are all imports you need. Feel free to import more things.
 import Data.Array ( (//), listArray, Array, assocs )
 import Data.Foldable ( foldl' )
+import Data.ByteString.Builder
 
 -- A point is just a tuple of integers.
 type Point = (Int, Int)
@@ -119,7 +120,7 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 --     SnakeHead -> "$ "
 --     Apple -> "X "
 --   In other to avoid shrinking, I'd recommend to use some charachter followed by an space.
-ppCell :: CellType -> String
+ppCell :: CellType -> Builder
 ppCell Empty     = "- "
 ppCell Snake     = "0 "
 ppCell SnakeHead = "$ "
@@ -128,14 +129,19 @@ ppCell Apple     = "X "
 
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
-render :: BoardInfo -> RenderState -> String
-render _ (RenderState _ True sc) = "final score: " ++ show sc ++ "\n"
+render :: BoardInfo -> RenderState -> Builder
+render _ (RenderState _ True sc) = "final score: " <> intDec sc
 render (BoardInfo _ w) (RenderState bd _ sc) =
-  foldl' renderWith "" (reverse (assocs bd)) ++ "current score: " ++ show sc ++ "\n"
-  where renderWith :: String -> (Point, CellType) -> String
+  foldl' renderWith "\n" (reverse (assocs bd)) <> ppScore sc
+  where renderWith :: Builder -> (Point, CellType) -> Builder
         renderWith s ((_,w'), cell)
-          | w' == w = ppCell cell ++ ('\n':s)
-          | otherwise = ppCell cell ++ s
+          | w' == w   = ppCell cell <> ("\n" <> s)
+          | otherwise = ppCell cell <> s
+
+ppScore :: Int -> Builder
+ppScore n = let scoreLine = "score:" <> intDec n <> "\n"
+                stars = "********\n"
+            in  stars <> scoreLine <> stars
 
 {-
 This is a test for render. It should return:
@@ -147,4 +153,10 @@ Notice, that this depends on what you've chosen for ppCell
 -- >>> board_info = BoardInfo 3 4
 -- >>> render_state = RenderState board  False
 -- >>> render board_info render_state
--- "- - - - \n- 0 $ - \n- - - X \n"
+-- Couldn't match expected type `RenderState'
+--             with actual type `Int -> RenderState'
+-- Probable cause: `render_state' is applied to too few arguments
+-- In the second argument of `render', namely `render_state'
+-- In the expression: render board_info render_state
+-- In an equation for `it_a1ph0':
+--     it_a1ph0 = render board_info render_state
