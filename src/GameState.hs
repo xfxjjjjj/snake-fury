@@ -50,8 +50,10 @@ opositeMovement West = East
 -- | Purely creates a random point within the board limits
 --   You should take a look to System.Random documentation.
 --   Also, in the import list you have all relevant functions.
-makeRandomPoint :: BoardInfo -> StdGen -> (Point, StdGen)
-makeRandomPoint (BoardInfo h w) = uniformR ((1,1),(h,w))
+makeRandomPoint :: BoardInfo -> GameState -> (Point, GameState)
+makeRandomPoint (BoardInfo h w) st =
+  let (p, g') = uniformR ((1,1),(h,w)) (randomGen st)
+  in  (p, st {randomGen = g'})
 
 {-
 We can't test makeRandomPoint, because different implementation may lead to different valid result.
@@ -106,20 +108,20 @@ True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
-newApple :: BoardInfo -> GameState -> (Point, StdGen)
-newApple (BoardInfo h w) (GameState (SnakeSeq he ts) apple _ g) =
-  findValidApple g
+newApple :: BoardInfo -> GameState -> (Point, GameState)
+newApple info st = findValidApple (randomGen st)
   where
     findValidApple gen =
       let (g1, g2) = splitGen gen
-          (p, g') = uniformR ((1,1), (h,w)) g1
-          mp = satisfiedApple p
-      in if isJust mp then (p, g') else findValidApple g2
+          (p, st') = makeRandomPoint info st {randomGen = g1}
+      in if satisfiedApple p then (p, st') else findValidApple g2
 
-    satisfiedApple :: Point -> Maybe Point
+    (SnakeSeq he ts) = snakeSeq st
+
+    satisfiedApple :: Point -> Bool
     satisfiedApple p
-      | p == apple || p == he || elem p ts = Nothing
-      | otherwise = Just p
+      | p == applePosition st || p == he || elem p ts = False
+      | otherwise = True
 
 {- We can't test this function because it depends on makeRandomPoint -}
 
@@ -149,28 +151,28 @@ move i s@(GameState (SnakeSeq he ts) apple _ _)
       let boardD = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (a', Board.Apple)]
           scoreD = Board.Score
           snakeSe = SnakeSeq {snakeHead = h', snakeBody = he :<| ts}
-          state = s {snakeSeq = snakeSe, applePosition = a', randomGen = g'}
+          state = s' {snakeSeq = snakeSe, applePosition = a'}
       in ([boardD, scoreD], state)
     _ ->
       case ts of
         S.Empty ->
           let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = S.Empty}
-              state = s {snakeSeq = snakeSe}
+              state = s' {snakeSeq = snakeSe}
           in ([delta], state)
         x :<| S.Empty ->
           let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (x, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = S.singleton he}
-              state = s {snakeSeq = snakeSe}
+              state = s' {snakeSeq = snakeSe}
           in ([delta], state)
         x :<| (xs :|> t) ->
           let delta = Board.RenderBoard [(h', Board.SnakeHead), (he, Board.Snake), (t, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = h', snakeBody = he :<| x :<| xs}
-              state = s {snakeSeq = snakeSe}
+              state = s' {snakeSeq = snakeSe}
           in ([delta], state)
   where
     h' = nextHead i s
-    (a', g') = newApple i s
+    (a', s') = newApple i s
 
 {- This is a test for move. It should return
 
