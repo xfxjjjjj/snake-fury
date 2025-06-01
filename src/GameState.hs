@@ -8,11 +8,13 @@ import RenderState (BoardInfo (..), Point, DeltaBoard)
 import qualified RenderState as Board
 import Data.Sequence ( Seq(..))
 import qualified Data.Sequence as S
-import System.Random ( uniformR, splitGen, StdGen, Random (randomR, random))
-import Data.Maybe (isJust, fromJust)
-import Control.Monad.Trans.State.Strict (State, get, put, modify, gets, runState)
+import System.Random ( uniformR, StdGen )
 
-type GameStep a = State GameState a
+import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
+import Control.Monad.Trans.Class ( MonadTrans(lift) )
+import Control.Monad.Trans.State.Strict (State, get, put, runState)
+
+type GameStep a = ReaderT BoardInfo (State GameState) a
 
 -- The movement is one of this.
 data Movement = North | South | East | West deriving (Show, Eq)
@@ -53,11 +55,12 @@ opositeMovement West = East
 -- | Purely creates a random point within the board limits
 --   You should take a look to System.Random documentation.
 --   Also, in the import list you have all relevant functions.
-makeRandomPoint :: BoardInfo -> GameStep Point
-makeRandomPoint (BoardInfo h w) = do
-    st <- get
+makeRandomPoint ::  GameStep Point
+makeRandomPoint = do
+    BoardInfo h w <- ask
+    st <- lift get
     let (p, g') = uniformR ((1,1),(h,w)) (randomGen st)
-    put st {randomGen = g'}
+    lift (put st {randomGen = g'})
     return p
 
 {-
@@ -113,13 +116,13 @@ True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
-newApple :: BoardInfo -> GameStep Point
-newApple info = findValidApple
+newApple :: GameStep Point
+newApple = findValidApple
   where
     findValidApple =
       do
-        st <- get
-        p <- makeRandomPoint info
+        st <- lift get
+        p <- makeRandomPoint
         let (SnakeSeq he ts) = snakeSeq st
         if p == applePosition st || p == he || elem p ts
           then findValidApple
@@ -147,53 +150,54 @@ newApple info = findValidApple
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 --
 
-extendSnake :: Point -> BoardInfo -> GameStep RenderState.DeltaBoard
-extendSnake p info = do
-    st <- get
-    app <- newApple info
+extendSnake :: Point -> GameStep RenderState.DeltaBoard
+extendSnake p = do
+    st <- lift get
+    app <- newApple
     let (SnakeSeq he ts) = snakeSeq st
         delta = [(p, Board.SnakeHead), (he, Board.Snake), (app, Board.Apple)]
         snakeSe = SnakeSeq p (he:<|ts)
-    put st {snakeSeq = snakeSe, applePosition = app}
+    lift (put st {snakeSeq = snakeSe, applePosition = app})
     return delta
 
-displaceSnake :: Point -> BoardInfo -> GameStep RenderState.DeltaBoard
-displaceSnake p _ = do
-  st <- get
+displaceSnake :: Point -> GameStep RenderState.DeltaBoard
+displaceSnake p = do
+  st <- lift get
   let (SnakeSeq he ts) = snakeSeq st
   case ts of
         S.Empty -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = S.Empty}
-          put st {snakeSeq = snakeSe}
+          lift (put st {snakeSeq = snakeSe})
           return delta
         x :<| S.Empty -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Snake), (x, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = S.singleton he}
-          put st {snakeSeq = snakeSe}
+          lift (put st {snakeSeq = snakeSe})
           return delta
         x :<| (xs :|> t) -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Snake), (t, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = he :<| x :<| xs}
-          put st {snakeSeq = snakeSe}
+          lift (put st {snakeSeq = snakeSe})
           return delta
 
-step :: BoardInfo -> GameStep [Board.RenderMessage]
-step info = do
-  st <- get
+step :: GameStep [Board.RenderMessage]
+step = do
+  info <- ask
+  st <- lift get
   let p = nextHead info st
       (SnakeSeq _ ts) = snakeSeq st
   if p `elem` ts then return [Board.GameOver]
   else case compare p (applePosition st) of
         EQ -> do
-          rb <- extendSnake p info
+          rb <- extendSnake p
           return [Board.Score, Board.RenderBoard rb]
         _  -> do
-          rb <- displaceSnake p info
+          rb <- displaceSnake p
           return [Board.RenderBoard rb]
 
 move :: BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
-move = runState . step
+move = runState . runReaderT step
 
 {- This is a test for move. It should return
 
