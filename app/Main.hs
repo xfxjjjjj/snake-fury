@@ -6,18 +6,17 @@ import Control.Concurrent (
   forkIO,
   threadDelay,
  )
-import EventQueue (
-  Event (Tick, UserEvent),
-  EventQueue (initialSpeed),
-  readEvent,
-  writeUserInput,
- )
+import EventQueue
+    ( Event(Tick, UserEvent),
+      readEvent,
+      writeUserInput,
+      setSpeed,
+      EventQueue )
 import GameState (GameState (movement), move, opositeMovement)
 import Initialization (gameInitialization)
-import RenderState (BoardInfo, RenderState (gameOver, score), render, updateRenderStates)
-import EventQueue (setSpeed, calculateSpeed, EventQueue (currentSpeed))
+import RenderState (BoardInfo, RenderState (gameOver, score), render)
 import System.Environment (getArgs)
-import System.IO (BufferMode (NoBuffering, BlockBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
+import System.IO (BufferMode (NoBuffering), hSetBinaryMode, hSetBuffering, hSetEcho, stdin, stdout)
 import Control.Monad (unless)
 import Data.ByteString.Builder (hPutBuilder)
 
@@ -32,17 +31,17 @@ gameloop binf gstate rstate queue = do
   newSpeed <- setSpeed (score rstate) queue
   threadDelay newSpeed
   event <- readEvent queue
-  let (deltas, gstate') =
+  let (msgs, gstate') =
         case event of
           Tick -> move binf gstate
           UserEvent m ->
             if movement gstate == opositeMovement m
               then move binf gstate
               else move binf $ gstate{movement = m}
-  let rstate' = updateRenderStates rstate deltas
+      (out, rstate') = render msgs binf rstate
       isGameOver = gameOver rstate'
   putStr "\ESC[2J" --This cleans the console screen
-  hPutBuilder stdout (render binf rstate')
+  hPutBuilder stdout out
   unless isGameOver $ gameloop binf gstate' rstate' queue
 
 -- | main.

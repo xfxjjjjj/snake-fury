@@ -28,6 +28,11 @@ import Data.Array ( (//), listArray, Array, assocs )
 import Data.Foldable ( foldl' )
 import Data.ByteString.Builder
 
+import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
+import Control.Monad.Trans.State.Strict (State, put, get, runState)
+import Control.Monad.Trans (lift)
+
+type RenderStep a = ReaderT BoardInfo (State RenderState) a
 -- A point is just a tuple of integers.
 type Point = (Int, Int)
 
@@ -84,15 +89,20 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 -- >>> buildInitialBoard (BoardInfo 2 2) (1,1) (2,2)
 -- RenderState {board = array ((1,1),(2,2)) [((1,1),Snake),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = False}
 
-updateRenderStates :: RenderState -> [RenderMessage] -> RenderState
-updateRenderStates = foldl updateRenderState
+updateRenderStates :: [RenderMessage] -> RenderStep ()
+updateRenderStates = mapM_ updateRenderState
 
 -- | Given tye current render state, and a message -> update the render state
-updateRenderState :: RenderState -> RenderMessage -> RenderState
-updateRenderState st GameOver = st {gameOver = True}
-updateRenderState st@(RenderState bd _ _) (RenderBoard delta)
-  = st {board = bd // delta}
-updateRenderState st Score = st {score = succ (score st)}
+updateRenderState :: RenderMessage -> RenderStep ()
+updateRenderState GameOver = do
+  st <- lift get
+  lift $ put st {gameOver = True}
+updateRenderState (RenderBoard delta) = do
+  st@(RenderState bd _ _) <- lift get
+  lift $ put st {board = bd // delta}
+updateRenderState Score = do
+  st <- lift get
+  lift $ put st {score = succ (score st)}
 
 {-
 This is a test for updateRenderState
@@ -126,17 +136,24 @@ ppCell Snake     = "0 "
 ppCell SnakeHead = "$ "
 ppCell Apple     = "X "
 
+renderStep :: [RenderMessage] -> RenderStep Builder
+renderStep msgs = do
+  updateRenderStates msgs
+  (RenderState bd gg sc) <- lift get
+  case gg of
+    True -> do return $ "final score: " <> intDec sc
+    _    -> do
+      BoardInfo _ w <- ask
+      let renderWith :: Builder -> (Point, CellType) -> Builder
+          renderWith s ((_,w'), cell)
+            | w' == w   = ppCell cell <> ("\n" <> s)
+            | otherwise = ppCell cell <> s
+      return $ foldl' renderWith "\n" (reverse (assocs bd)) <> ppScore sc
 
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
-render :: BoardInfo -> RenderState -> Builder
-render _ (RenderState _ True sc) = "final score: " <> intDec sc
-render (BoardInfo _ w) (RenderState bd _ sc) =
-  foldl' renderWith "\n" (reverse (assocs bd)) <> ppScore sc
-  where renderWith :: Builder -> (Point, CellType) -> Builder
-        renderWith s ((_,w'), cell)
-          | w' == w   = ppCell cell <> ("\n" <> s)
-          | otherwise = ppCell cell <> s
+render :: [RenderMessage] -> BoardInfo -> RenderState -> (Builder, RenderState)
+render msgs info = runState (runReaderT (renderStep msgs) info)
 
 ppScore :: Int -> Builder
 ppScore n = let scoreLine = "score:" <> intDec n <> "\n"
