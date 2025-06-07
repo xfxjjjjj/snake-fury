@@ -30,9 +30,9 @@ gameloop binf gstate rstate queue = do
   newSpeed <- setSpeed (score rstate) queue
   threadDelay newSpeed
   event <- readEvent queue
-  let (msgs, gstate') = move event binf gstate
-      (out, rstate') = render msgs binf rstate
-      isGameOver = gameOver rstate'
+  (msgs, gstate') <- move event binf gstate
+  (out, rstate') <- render msgs binf rstate
+  let isGameOver = gameOver rstate'
   putStr "\ESC[2J" --This cleans the console screen
   hPutBuilder stdout out
   unless isGameOver $ gameloop binf gstate' rstate' queue

@@ -1,6 +1,8 @@
 {-|
 This module defines the logic of the game and the communication with the `Board.RenderState`
 -}
+{-# LANGUAGE FlexibleContexts, GeneralisedNewtypeDeriving #-}
+
 module GameState where
 
 -- These are all the import. Feel free to use more if needed.
@@ -10,13 +12,16 @@ import Data.Sequence ( Seq(..))
 import qualified Data.Sequence as S
 import System.Random ( uniformR, StdGen )
 
-import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
-import Control.Monad.Trans.Class ( MonadTrans(lift) )
-import Control.Monad.Trans.State.Strict (State, get, put, runState)
+import Control.Monad.Trans.Reader (ReaderT (runReaderT))
+import Control.Monad.Trans.State.Strict (StateT, runStateT)
+import Control.Monad.State.Class (MonadState, get, put)
+import Control.Monad.Reader.Class (MonadReader, ask)
 
 -- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
 data Event = Tick | UserEvent Movement
-type GameStep a = ReaderT BoardInfo (State GameState) a
+newtype GameStep m a = GameStep {runGameStep :: ReaderT BoardInfo (StateT GameState m) a}
+  deriving (Functor, Applicative, Monad, MonadState GameState, MonadReader BoardInfo)
+
 
 -- The movement is one of this.
 data Movement = North | South | East | West deriving (Show, Eq)
@@ -57,12 +62,12 @@ opositeMovement West = East
 -- | Purely creates a random point within the board limits
 --   You should take a look to System.Random documentation.
 --   Also, in the import list you have all relevant functions.
-makeRandomPoint ::  GameStep Point
+makeRandomPoint :: (MonadState GameState m, MonadReader BoardInfo m) => m Point
 makeRandomPoint = do
     BoardInfo h w <- ask
-    st <- lift get
+    st <- get
     let (p, g') = uniformR ((1,1),(h,w)) (randomGen st)
-    lift (put st {randomGen = g'})
+    put st {randomGen = g'}
     return p
 
 {-
@@ -118,12 +123,12 @@ True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
-newApple :: GameStep Point
+newApple :: (MonadState GameState m, MonadReader BoardInfo m) => m Point
 newApple = findValidApple
   where
     findValidApple =
       do
-        st <- lift get
+        st <- get
         p <- makeRandomPoint
         let (SnakeSeq he ts) = snakeSeq st
         if p == applePosition st || p == he || elem p ts
@@ -152,41 +157,43 @@ newApple = findValidApple
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 --
 
-extendSnake :: Point -> GameStep RenderState.DeltaBoard
+extendSnake :: (MonadState GameState m, MonadReader BoardInfo m) =>
+  Point -> m RenderState.DeltaBoard
 extendSnake p = do
-    st <- lift get
+    st <- get
     app <- newApple
     let (SnakeSeq he ts) = snakeSeq st
         delta = [(p, Board.SnakeHead), (he, Board.Snake), (app, Board.Apple)]
         snakeSe = SnakeSeq p (he:<|ts)
-    lift (put st {snakeSeq = snakeSe, applePosition = app})
+    put st {snakeSeq = snakeSe, applePosition = app}
     return delta
 
-displaceSnake :: Point -> GameStep RenderState.DeltaBoard
+displaceSnake :: (MonadState GameState m, MonadReader BoardInfo m) =>
+  Point -> m RenderState.DeltaBoard
 displaceSnake p = do
-  st <- lift get
+  st <- get
   let (SnakeSeq he ts) = snakeSeq st
   case ts of
         S.Empty -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = S.Empty}
-          lift (put st {snakeSeq = snakeSe})
+          put st {snakeSeq = snakeSe}
           return delta
         x :<| S.Empty -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Snake), (x, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = S.singleton he}
-          lift (put st {snakeSeq = snakeSe})
+          put st {snakeSeq = snakeSe}
           return delta
         x :<| (xs :|> t) -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Snake), (t, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = he :<| x :<| xs}
-          lift (put st {snakeSeq = snakeSe})
+          put st {snakeSeq = snakeSe}
           return delta
 
-step :: GameStep [Board.RenderMessage]
+step :: (MonadState GameState m, MonadReader BoardInfo m) => m [Board.RenderMessage]
 step = do
   info <- ask
-  st <- lift get
+  st <- get
   let p = nextHead info st
       (SnakeSeq _ ts) = snakeSeq st
   if p `elem` ts then return [Board.GameOver]
@@ -198,14 +205,14 @@ step = do
           rb <- displaceSnake p
           return [Board.RenderBoard rb]
 
-move :: Event -> BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
+move :: Monad m => Event -> BoardInfo -> GameState -> m ([Board.RenderMessage] , GameState)
 move event binf gstate =
   case event of
-    Tick -> runState (runReaderT step binf) gstate
+    Tick -> runStateT (runReaderT step binf) gstate
     UserEvent m ->
       if movement gstate == opositeMovement m
-        then runState (runReaderT step binf) gstate
-        else runState (runReaderT step binf) (gstate {movement = m})
+        then runStateT (runReaderT step binf) gstate
+        else runStateT (runReaderT step binf) (gstate {movement = m})
 
 {- This is a test for move. It should return
 
