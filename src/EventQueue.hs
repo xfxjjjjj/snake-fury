@@ -7,7 +7,6 @@ module EventQueue where
 
 import Control.Concurrent (
   MVar,
-  readMVar,
   swapMVar,
  )
 import Control.Concurrent.BoundedChan (
@@ -17,9 +16,7 @@ import Control.Concurrent.BoundedChan (
  )
 import qualified GameState as Snake
 import System.IO (hReady, stdin)
-
--- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
-data Event = Tick | UserEvent Snake.Movement
+import GameState
 
 -- | the `UserInputQueue` is an asynchronous bounded channel which contains snake movements. This channel is feeded by key strokes
 type UserInputQueue = BoundedChan Snake.Movement

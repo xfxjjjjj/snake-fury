@@ -7,12 +7,11 @@ import Control.Concurrent (
   threadDelay,
  )
 import EventQueue
-    ( Event(Tick, UserEvent),
-      readEvent,
+    ( readEvent,
       writeUserInput,
       setSpeed,
       EventQueue )
-import GameState (GameState (movement), move, opositeMovement)
+import GameState (GameState, move)
 import Initialization (gameInitialization)
 import RenderState (BoardInfo, RenderState (gameOver, score), render)
 import System.Environment (getArgs)
@@ -31,13 +30,7 @@ gameloop binf gstate rstate queue = do
   newSpeed <- setSpeed (score rstate) queue
   threadDelay newSpeed
   event <- readEvent queue
-  let (msgs, gstate') =
-        case event of
-          Tick -> move binf gstate
-          UserEvent m ->
-            if movement gstate == opositeMovement m
-              then move binf gstate
-              else move binf $ gstate{movement = m}
+  let (msgs, gstate') = move event binf gstate
       (out, rstate') = render msgs binf rstate
       isGameOver = gameOver rstate'
   putStr "\ESC[2J" --This cleans the console screen

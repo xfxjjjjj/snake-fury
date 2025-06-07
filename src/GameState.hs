@@ -14,6 +14,8 @@ import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
 import Control.Monad.Trans.Class ( MonadTrans(lift) )
 import Control.Monad.Trans.State.Strict (State, get, put, runState)
 
+-- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
+data Event = Tick | UserEvent Movement
 type GameStep a = ReaderT BoardInfo (State GameState) a
 
 -- The movement is one of this.
@@ -196,8 +198,14 @@ step = do
           rb <- displaceSnake p
           return [Board.RenderBoard rb]
 
-move :: BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
-move = runState . runReaderT step
+move :: Event -> BoardInfo -> GameState -> ([Board.RenderMessage] , GameState)
+move event binf gstate =
+  case event of
+    Tick -> runState (runReaderT step binf) gstate
+    UserEvent m ->
+      if movement gstate == opositeMovement m
+        then runState (runReaderT step binf) gstate
+        else runState (runReaderT step binf) (gstate {movement = m})
 
 {- This is a test for move. It should return
 
