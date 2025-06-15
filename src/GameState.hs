@@ -16,13 +16,17 @@ import System.Random ( uniformR, StdGen )
 
 import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Control.Monad.Trans.State.Strict (StateT, runStateT)
-import Control.Monad.State.Class (MonadState (state), get, put)
+import Control.Monad.State.Class (MonadState (state), get, modify, gets)
 import Control.Monad.Reader.Class (MonadReader, ask)
 import Control.Monad.Reader (local)
 
 -- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
 data Event = Tick | UserEvent Movement
 newtype GameStep m a = GameStep {runGameStep :: StateT GameState (ReaderT BoardInfo m) a}
+
+class HasGameState s where
+  getGameState :: s -> GameState
+  setGameState :: s -> GameState -> s
 
 instance Functor m => Functor (GameStep m) where
   fmap :: (a -> b) -> GameStep m a -> GameStep m b
@@ -87,12 +91,12 @@ opositeMovement West = East
 -- | Purely creates a random point within the board limits
 --   You should take a look to System.Random documentation.
 --   Also, in the import list you have all relevant functions.
-makeRandomPoint :: (MonadState GameState m, MonadReader BoardInfo m) => m Point
+makeRandomPoint :: (MonadState s m, MonadReader BoardInfo m, HasGameState s) => m Point
 makeRandomPoint = do
     BoardInfo h w <- ask
-    st <- get
+    st <- fmap getGameState get
     let (p, g') = uniformR ((1,1),(h,w)) (randomGen st)
-    put st {randomGen = g'}
+    modify $ flip setGameState (st {randomGen = g'})
     return p
 
 {-
@@ -148,12 +152,12 @@ True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
-newApple :: (MonadState GameState m, MonadReader BoardInfo m) => m Point
+newApple :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) => m Point
 newApple = findValidApple
   where
     findValidApple =
       do
-        st <- get
+        st <- gets getGameState
         p <- makeRandomPoint
         let (SnakeSeq he ts) = snakeSeq st
         if p == applePosition st || p == he || elem p ts
@@ -182,43 +186,43 @@ newApple = findValidApple
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 --
 
-extendSnake :: (MonadState GameState m, MonadReader BoardInfo m) =>
+extendSnake :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) =>
   Point -> m RenderState.DeltaBoard
 extendSnake p = do
-    st <- get
+    st <- gets getGameState
     app <- newApple
     let (SnakeSeq he ts) = snakeSeq st
         delta = [(p, Board.SnakeHead), (he, Board.Snake), (app, Board.Apple)]
         snakeSe = SnakeSeq p (he:<|ts)
-    put st {snakeSeq = snakeSe, applePosition = app}
+    modify $ flip setGameState st {snakeSeq = snakeSe, applePosition = app}
     return delta
 
-displaceSnake :: (MonadState GameState m, MonadReader BoardInfo m) =>
+displaceSnake :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) =>
   Point -> m RenderState.DeltaBoard
 displaceSnake p = do
-  st <- get
+  st <- gets getGameState
   let (SnakeSeq he ts) = snakeSeq st
   case ts of
         S.Empty -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = S.Empty}
-          put st {snakeSeq = snakeSe}
+          modify $ flip setGameState st {snakeSeq = snakeSe}
           return delta
         x :<| S.Empty -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Snake), (x, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = S.singleton he}
-          put st {snakeSeq = snakeSe}
+          modify $ flip setGameState st {snakeSeq = snakeSe}
           return delta
         x :<| (xs :|> t) -> do
           let delta = [(p, Board.SnakeHead), (he, Board.Snake), (t, Board.Empty)]
               snakeSe = SnakeSeq {snakeHead = p, snakeBody = he :<| x :<| xs}
-          put st {snakeSeq = snakeSe}
+          modify $ flip setGameState st {snakeSeq = snakeSe}
           return delta
 
-step :: (MonadState GameState m, MonadReader BoardInfo m) => m [Board.RenderMessage]
+step :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) => m [Board.RenderMessage]
 step = do
   info <- ask
-  st <- get
+  st <- gets getGameState
   let p = nextHead info st
       (SnakeSeq _ ts) = snakeSeq st
   if p `elem` ts then return [Board.GameOver]
@@ -230,14 +234,17 @@ step = do
           rb <- displaceSnake p
           return [Board.RenderBoard rb]
 
-move :: Monad m => Event -> BoardInfo -> GameState -> m ([Board.RenderMessage] , GameState)
-move event binf gstate =
+move :: (MonadReader BoardInfo m, MonadState state m, HasGameState state) => Event -> m [Board.RenderMessage]
+move event =
   case event of
-    Tick -> runStateT (runReaderT step binf) gstate
-    UserEvent m ->
+    Tick -> step
+    UserEvent m -> do
+      gstate <- gets getGameState
       if movement gstate == opositeMovement m
-        then runStateT (runReaderT step binf) gstate
-        else runStateT (runReaderT step binf) (gstate {movement = m})
+        then step
+        else do
+          modify $ flip setGameState gstate {movement = m}
+          step
 
 {- This is a test for move. It should return
 
