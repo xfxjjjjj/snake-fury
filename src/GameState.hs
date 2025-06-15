@@ -1,7 +1,9 @@
 {-|
 This module defines the logic of the game and the communication with the `Board.RenderState`
 -}
-{-# LANGUAGE FlexibleContexts, GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE InstanceSigs, MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module GameState where
 
@@ -14,14 +16,37 @@ import System.Random ( uniformR, StdGen )
 
 import Control.Monad.Trans.Reader (ReaderT (runReaderT))
 import Control.Monad.Trans.State.Strict (StateT, runStateT)
-import Control.Monad.State.Class (MonadState, get, put)
+import Control.Monad.State.Class (MonadState (state), get, put)
 import Control.Monad.Reader.Class (MonadReader, ask)
+import Control.Monad.Reader (local)
 
 -- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
 data Event = Tick | UserEvent Movement
-newtype GameStep m a = GameStep {runGameStep :: ReaderT BoardInfo (StateT GameState m) a}
-  deriving (Functor, Applicative, Monad, MonadState GameState, MonadReader BoardInfo)
+newtype GameStep m a = GameStep {runGameStep :: StateT GameState (ReaderT BoardInfo m) a}
 
+instance Functor m => Functor (GameStep m) where
+  fmap :: (a -> b) -> GameStep m a -> GameStep m b
+  fmap g gameStep = GameStep $ fmap g (runGameStep gameStep)
+
+instance Monad m => Applicative (GameStep m) where
+  pure :: Monad m => a -> GameStep m a
+  pure a = GameStep $ pure a
+  (<*>) :: Monad m => GameStep m (a -> b) -> GameStep m a -> GameStep m b
+  (GameStep f) <*> (GameStep a) = GameStep $ f <*> a
+
+instance Monad m => Monad (GameStep m) where
+  (>>=) :: Monad m => GameStep m a -> (a -> GameStep m b) -> GameStep m b
+  (GameStep r) >>= f = GameStep $ r >>= runGameStep . f
+
+instance Monad m => MonadReader BoardInfo (GameStep m) where
+  ask :: Monad m => GameStep m BoardInfo
+  ask = GameStep ask
+  local :: Monad m => (BoardInfo -> BoardInfo) -> GameStep m a -> GameStep m a
+  local m (GameStep r) = GameStep $ local m r
+
+instance Monad m => MonadState GameState (GameStep m) where
+  state :: Monad m => (GameState -> (a, GameState)) -> GameStep m a
+  state f = GameStep $ state f
 
 -- The movement is one of this.
 data Movement = North | South | East | West deriving (Show, Eq)
