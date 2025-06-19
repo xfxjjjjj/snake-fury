@@ -14,8 +14,8 @@ import Data.Sequence ( Seq(..))
 import qualified Data.Sequence as S
 import System.Random ( uniformR, StdGen )
 
-import Control.Monad.Trans.Reader (ReaderT (runReaderT))
-import Control.Monad.Trans.State.Strict (StateT, runStateT)
+import Control.Monad.Trans.Reader (ReaderT)
+import Control.Monad.Trans.State.Strict (StateT)
 import Control.Monad.State.Class (MonadState (state), get, modify, gets)
 import Control.Monad.Reader.Class (MonadReader, ask)
 import Control.Monad.Reader (local)

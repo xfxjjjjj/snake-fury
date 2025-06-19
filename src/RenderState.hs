@@ -28,15 +28,21 @@ import Data.Array ( (//), listArray, Array, assocs )
 import Data.Foldable ( foldl' )
 import Data.ByteString.Builder
 
-import Control.Monad.Trans.Reader (ReaderT (runReaderT))
-import Control.Monad.Trans.State.Strict (StateT, runStateT)
-import Control.Monad.State.Class (MonadState, put, get)
+import Control.Monad.Trans.Reader (ReaderT)
+import Control.Monad.Trans.State.Strict (StateT)
+import Control.Monad.State.Class (MonadState, modify, gets)
 import Control.Monad.Reader.Class (MonadReader, ask)
+import Control.Monad.Cont (MonadIO, liftIO)
+import System.IO (stdout)
 
 newtype RenderStep m a = RenderStep {runRenderStep :: ReaderT BoardInfo (StateT RenderState m) a}
   deriving (Functor, Applicative, Monad, MonadState RenderState, MonadReader BoardInfo)
 -- A point is just a tuple of integers.
 type Point = (Int, Int)
+
+class HasRenderState s where
+  getRenderState :: s -> RenderState
+  setRenderState :: s -> RenderState -> s
 
 -- | Cell types. We distinguish between Snake and SnakeHead
 data CellType = Empty | Snake | SnakeHead | Apple deriving (Show, Eq)
@@ -91,20 +97,20 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 -- >>> buildInitialBoard (BoardInfo 2 2) (1,1) (2,2)
 -- RenderState {board = array ((1,1),(2,2)) [((1,1),Snake),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = False}
 
-updateRenderStates :: (MonadState RenderState m, MonadReader BoardInfo m) => [RenderMessage] -> m ()
+updateRenderStates :: (HasRenderState s, MonadState s m, MonadReader BoardInfo m) => [RenderMessage] -> m ()
 updateRenderStates = mapM_ updateRenderState
 
 -- | Given tye current render state, and a message -> update the render state
-updateRenderState :: (MonadState RenderState m, MonadReader BoardInfo m) =>  RenderMessage -> m ()
+updateRenderState :: (HasRenderState s, MonadState s m, MonadReader BoardInfo m) =>  RenderMessage -> m ()
 updateRenderState GameOver = do
-  st <- get
-  put st {gameOver = True}
+  st <- gets getRenderState
+  modify $ flip setRenderState st {gameOver = True}
 updateRenderState (RenderBoard delta) = do
-  st@(RenderState bd _ _) <- get
-  put st {board = bd // delta}
+  st@(RenderState bd _ _) <- gets getRenderState
+  modify $ flip setRenderState st {board = bd // delta}
 updateRenderState Score = do
-  st <- get
-  put st {score = succ (score st)}
+  st <- gets getRenderState
+  modify $ flip setRenderState st {score = succ (score st)}
 
 {-
 This is a test for updateRenderState
@@ -138,10 +144,10 @@ ppCell Snake     = "0 "
 ppCell SnakeHead = "$ "
 ppCell Apple     = "X "
 
-renderStep :: (MonadState RenderState m, MonadReader BoardInfo m) => [RenderMessage] -> m Builder
+renderStep :: (HasRenderState s, MonadState s m, MonadReader BoardInfo m) => [RenderMessage] -> m Builder
 renderStep msgs = do
   updateRenderStates msgs
-  (RenderState bd gg sc) <- get
+  (RenderState bd gg sc) <- gets getRenderState
   case gg of
     True -> do return $ "final score: " <> intDec sc
     _    -> do
@@ -154,8 +160,11 @@ renderStep msgs = do
 
 -- | convert the RenderState in a String ready to be flushed into the console.
 --   It should return the Board with a pretty look. If game over, return the empty board.
-render :: Monad m => [RenderMessage] -> BoardInfo -> RenderState -> m (Builder, RenderState)
-render msgs info = runStateT (runReaderT (renderStep msgs) info)
+render :: (MonadReader BoardInfo m, MonadState s m, HasRenderState s, MonadIO m) => [RenderMessage] -> m ()
+render msgs = do
+  out <- renderStep msgs
+  liftIO $ putStr "\ESC[2J" --This cleans the console screen
+  liftIO $ hPutBuilder stdout out
 
 ppScore :: Int -> Builder
 ppScore n = let scoreLine = "score:" <> intDec n <> "\n"
