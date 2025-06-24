@@ -31,9 +31,8 @@ import Data.ByteString.Builder
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.State.Strict (StateT)
 import Control.Monad.State.Class (MonadState, modify, gets)
-import Control.Monad.Reader.Class (MonadReader, ask)
+import Control.Monad.Reader.Class (MonadReader, asks)
 import Control.Monad.Cont (MonadIO, liftIO)
-import System.IO (stdout)
 
 newtype RenderStep m a = RenderStep {runRenderStep :: ReaderT BoardInfo (StateT RenderState m) a}
   deriving (Functor, Applicative, Monad, MonadState RenderState, MonadReader BoardInfo)
@@ -43,6 +42,9 @@ type Point = (Int, Int)
 class HasRenderState s where
   getRenderState :: s -> RenderState
   setRenderState :: s -> RenderState -> s
+
+class HasBoardInfo env where
+  getBoardInfo :: env -> BoardInfo
 
 -- | Cell types. We distinguish between Snake and SnakeHead
 data CellType = Empty | Snake | SnakeHead | Apple deriving (Show, Eq)
@@ -97,11 +99,11 @@ RenderState {board = array ((1,1),(2,2)) [((1,1),SnakeHead),((1,2),Empty),((2,1)
 -- >>> buildInitialBoard (BoardInfo 2 2) (1,1) (2,2)
 -- RenderState {board = array ((1,1),(2,2)) [((1,1),Snake),((1,2),Empty),((2,1),Empty),((2,2),Apple)], gameOver = False}
 
-updateRenderStates :: (HasRenderState s, MonadState s m, MonadReader BoardInfo m) => [RenderMessage] -> m ()
+updateRenderStates :: (HasRenderState s, MonadState s m, HasBoardInfo env, MonadReader env m) => [RenderMessage] -> m ()
 updateRenderStates = mapM_ updateRenderState
 
 -- | Given tye current render state, and a message -> update the render state
-updateRenderState :: (HasRenderState s, MonadState s m, MonadReader BoardInfo m) =>  RenderMessage -> m ()
+updateRenderState :: (HasRenderState s, MonadState s m, HasBoardInfo env, MonadReader env m) =>  RenderMessage -> m ()
 updateRenderState GameOver = do
   st <- gets getRenderState
   modify $ flip setRenderState st {gameOver = True}
@@ -144,27 +146,19 @@ ppCell Snake     = "0 "
 ppCell SnakeHead = "$ "
 ppCell Apple     = "X "
 
-renderStep :: (HasRenderState s, MonadState s m, MonadReader BoardInfo m) => [RenderMessage] -> m Builder
-renderStep msgs = do
-  updateRenderStates msgs
-  (RenderState bd gg sc) <- gets getRenderState
+buildBoard :: BoardInfo -> RenderState -> Builder
+buildBoard binf rstate =
+  let (RenderState bd gg sc) = rstate
+      BoardInfo _ w = binf in
   case gg of
-    True -> do return $ "final score: " <> intDec sc
+    True -> do "final score: " <> intDec sc
     _    -> do
-      BoardInfo _ w <- ask
+
       let renderWith :: Builder -> (Point, CellType) -> Builder
           renderWith s ((_,w'), cell)
             | w' == w   = ppCell cell <> ("\n" <> s)
             | otherwise = ppCell cell <> s
-      return $ foldl' renderWith "\n" (reverse (assocs bd)) <> ppScore sc
-
--- | convert the RenderState in a String ready to be flushed into the console.
---   It should return the Board with a pretty look. If game over, return the empty board.
-render :: (MonadReader BoardInfo m, MonadState s m, HasRenderState s, MonadIO m) => [RenderMessage] -> m ()
-render msgs = do
-  out <- renderStep msgs
-  liftIO $ putStr "\ESC[2J" --This cleans the console screen
-  liftIO $ hPutBuilder stdout out
+      foldl' renderWith "\n" (reverse (assocs bd)) <> ppScore sc
 
 ppScore :: Int -> Builder
 ppScore n = let scoreLine = "score:" <> intDec n <> "\n"

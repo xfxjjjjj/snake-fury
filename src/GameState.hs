@@ -8,7 +8,7 @@ This module defines the logic of the game and the communication with the `Board.
 module GameState where
 
 -- These are all the import. Feel free to use more if needed.
-import RenderState (BoardInfo (..), Point, DeltaBoard)
+import RenderState (BoardInfo (..), Point, DeltaBoard, HasBoardInfo (getBoardInfo))
 import qualified RenderState as Board
 import Data.Sequence ( Seq(..))
 import qualified Data.Sequence as S
@@ -17,7 +17,7 @@ import System.Random ( uniformR, StdGen )
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.State.Strict (StateT)
 import Control.Monad.State.Class (MonadState (state), get, modify, gets)
-import Control.Monad.Reader.Class (MonadReader, ask)
+import Control.Monad.Reader.Class (MonadReader, ask, asks)
 import Control.Monad.Reader (local)
 
 -- | The are two kind of events, a `ClockEvent`, representing movement which is not force by the user input, and `UserEvent` which is the opposite.
@@ -91,9 +91,9 @@ opositeMovement West = East
 -- | Purely creates a random point within the board limits
 --   You should take a look to System.Random documentation.
 --   Also, in the import list you have all relevant functions.
-makeRandomPoint :: (MonadState s m, MonadReader BoardInfo m, HasGameState s) => m Point
+makeRandomPoint :: (MonadState s m, HasBoardInfo env, MonadReader env m, HasGameState s) => m Point
 makeRandomPoint = do
-    BoardInfo h w <- ask
+    BoardInfo h w <- asks getBoardInfo
     st <- fmap getGameState get
     let (p, g') = uniformR ((1,1),(h,w)) (randomGen st)
     modify $ flip setGameState (st {randomGen = g'})
@@ -152,7 +152,7 @@ True
 
 
 -- | Calculates a new random apple, avoiding creating the apple in the same place, or in the snake body
-newApple :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) => m Point
+newApple :: (MonadState s m, HasGameState s, HasBoardInfo env, MonadReader env m) => m Point
 newApple = findValidApple
   where
     findValidApple =
@@ -186,7 +186,7 @@ newApple = findValidApple
 -- We need to send the following delta: [((2,2), Apple), ((4,3), Snake), ((4,4), SnakeHead)]
 --
 
-extendSnake :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) =>
+extendSnake :: (MonadState s m, HasGameState s, HasBoardInfo env, MonadReader env m) =>
   Point -> m RenderState.DeltaBoard
 extendSnake p = do
     st <- gets getGameState
@@ -197,7 +197,7 @@ extendSnake p = do
     modify $ flip setGameState st {snakeSeq = snakeSe, applePosition = app}
     return delta
 
-displaceSnake :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) =>
+displaceSnake :: (MonadState s m, HasGameState s, HasBoardInfo env, MonadReader env m) =>
   Point -> m RenderState.DeltaBoard
 displaceSnake p = do
   st <- gets getGameState
@@ -219,9 +219,9 @@ displaceSnake p = do
           modify $ flip setGameState st {snakeSeq = snakeSe}
           return delta
 
-step :: (MonadState s m, HasGameState s, MonadReader BoardInfo m) => m [Board.RenderMessage]
+step :: (MonadState s m, HasGameState s, HasBoardInfo env, MonadReader env m) => m [Board.RenderMessage]
 step = do
-  info <- ask
+  info <- asks getBoardInfo
   st <- gets getGameState
   let p = nextHead info st
       (SnakeSeq _ ts) = snakeSeq st
@@ -234,7 +234,7 @@ step = do
           rb <- displaceSnake p
           return [Board.RenderBoard rb]
 
-move :: (MonadReader BoardInfo m, MonadState state m, HasGameState state) => Event -> m [Board.RenderMessage]
+move :: (HasBoardInfo env, MonadReader env m, MonadState state m, HasGameState state) => Event -> m [Board.RenderMessage]
 move event =
   case event of
     Tick -> step
